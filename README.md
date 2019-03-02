@@ -72,7 +72,7 @@ If we did provide an argument, only the keys with that prefix will be listed.
 
 The `put` command inserts a file into the given etcd3 key.  If `-` was provided instead of a file, the input will be read from the STDIN.
 
-> **NOTE**:<br/> The etcd3 cannot store the binary content.  Therefore, the `put` command also supports `--e64` option, which will perform a [base64](https://en.wikipedia.org/wiki/Base64) encoding on the content before storing.
+> ![#c5f015](https://placehold.it/15/c5f015/000000?text=+) **NOTE**:<br/> The etcd3 cannot store the binary content.  Therefore, the `put` command also supports `--e64` option, which will perform a [base64](https://en.wikipedia.org/wiki/Base64) encoding on the content before storing.
 
 ### GET key
 
@@ -87,7 +87,7 @@ The `put` command inserts a file into the given etcd3 key.  If `-` was provided 
 
 The `get` command retrieves the given content out of the etcd3 database.  The key's data (the values) will be displayed directly on the STDOUT.
 
-> **NOTE**:<br/> The etcd3 cannot store the binary content.  If the content was stored using [base64](https://en.wikipedia.org/wiki/Base64) encoding, you can use the `--d64` option to decode the content back into binary, before displaying it on the screen.
+> ![#c5f015](https://placehold.it/15/c5f015/000000?text=+) **NOTE**:<br/> If the content was stored using [base64](https://en.wikipedia.org/wiki/Base64) encoding, you can use the `--d64` option to decode the content back into binary, before displaying it on the screen (or redirecting output into a file).
 
 ### REMOVE key
 
@@ -104,7 +104,7 @@ The `get` command retrieves the given content out of the etcd3 database.  The ke
 
 The `remove` (`rm`) command removes the keys from the etcd3.  Removing the keys ending with `/` (e.g. `foo/`) will trigged *recursive removal* of the content.
 
-> <span style="color:red">**WARNING**</span>:<br/> Please exercise caution when removing content from the etcd3 database.  Once removed, the content cannot be retrieved, unless you can perform a restore from a recent database snapshot, or have a content-dump.<br/>
+> ![#f03c15](https://placehold.it/15/f03c15/000000?text=+) **WARNING**</span>:<br/> Please exercise caution when removing content from the etcd3 database.  Once removed, the content cannot be retrieved, unless you can perform a restore from a recent database snapshot, or have a content-dump.<br/>
 > This is especially important with *recursive deletions*, triggered by removing keys ending with "/".
 
 ## Dump/Upload operations
@@ -173,11 +173,12 @@ The `zip` command downloads the etcd3 content into [ZIP](https://en.wikipedia.or
 
 ## Known Limitations
 
-* content locking while keys are being uploaded/downloaded
+* no content locking while keys are being uploaded/downloaded
 	- **CAVEAT**: in concurrent-access scenarios you might be downloading corrupted/incomplete data
 * no authentication support  (i.e. cannot work with user/password -protected etcd3)
 * no client SSL support  (i.e. does not work with client-side SSL certificates)
 
 ## Legal
 
-**NO WARRANTY.**  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+**NO WARRANTY SHOUT-OUT:**  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
