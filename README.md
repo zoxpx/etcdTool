@@ -6,6 +6,13 @@ This tool works with the etcd3 databases, and provides a basic list/get/put/remo
 
 However, unlike the etcdctl it can dump the database to the file-system, or into the ZIP, TAR or TAR-GZ archives.   Please note that this is done _without_ any kind of database locks, so we make no guarantees about database consistency.
 
+## Building
+
+To build this tool, you should [download and install golang](https://golang.org/dl/) if you haven't already, and run the following command:
+
+	go get -u github.com/zoxpx/etcdTool
+
+After the command completes, you will find the tool in `$GOPATH/bin/etcdTool`.
 
 ## General syntax
 
