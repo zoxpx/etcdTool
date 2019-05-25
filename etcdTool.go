@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
@@ -17,11 +18,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"archive/zip"
+	"unicode"
 )
 
 const (
-	VERSION = "1.2"
+	version = "1.3"
 )
 
 var (
@@ -55,6 +56,20 @@ func checkErr(err error) {
 	}
 }
 
+func countKeys(path string) int64 {
+	var (
+		client = getEtcdClient()
+		opts   = []clientv3.OpOption{
+			clientv3.WithPrefix(),
+			clientv3.WithCountOnly(),
+		}
+	)
+
+	res, err := client.Get(ctx, path, opts...)
+	checkErr(err)
+	return res.Count
+}
+
 func actList(c *cli.Context) error {
 	var (
 		client = getEtcdClient()
@@ -73,6 +88,13 @@ func actList(c *cli.Context) error {
 	for _, a := range args {
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
+		if len(args) > 1 || res.Count > 1 {
+			if a != "" {
+				logrus.Infof("Found %d keys in %s:", res.Count, a)
+			} else {
+				logrus.Infof("Found %d keys:", res.Count)
+			}
+		}
 		for _, v := range res.Kvs {
 			fmt.Printf("%s\n", v.Key)
 		}
@@ -318,23 +340,39 @@ func actUpload(c *cli.Context) error {
 
 func actRemove(c *cli.Context) error {
 	if c.NArg() <= 0 {
-		return fmt.Errorf("Must specify which keys to dump")
+		return fmt.Errorf("Must specify which keys to remove")
 	}
 
-	client := getEtcdClient()
+	var (
+		client   = getEtcdClient()
+		optForce = c.Bool("f")
+		txt      string
+	)
 
 	for _, a := range c.Args() {
 		opts := []clientv3.OpOption{}
+		ask := false
 		if strings.HasSuffix(a, "/") {
 			// dumping subtree
 			opts = []clientv3.OpOption{
 				clientv3.WithPrefix(),
 			}
+			ask = !optForce
 		}
 		logrus.Debugf("Doing DEL(%s,%#v)...", a, opts)
+		if ask {
+			if cnt := countKeys(a); cnt > 0 {
+				fmt.Fprintf(logrus.StandardLogger().Out, "WARNING: About to delete %d keys in %s!  Continue [Y/*]? ", cnt, a)
+				fmt.Scanln(&txt)
+				if len(txt) < 1 || unicode.ToUpper(rune(txt[0])) != 'Y' {
+					logrus.Error("Aborted.")
+					os.Exit(1)
+				}
+			}
+		}
 		res, err := client.Delete(ctx, a, opts...)
 		checkErr(err)
-		logrus.Infof("Deleted %d entries", res.Deleted)
+		logrus.Infof("Deleted %d keys.", res.Deleted)
 	}
 
 	return nil
@@ -433,7 +471,7 @@ func main() {
 	}
 
 	app := cli.NewApp()
-	app.Version = VERSION
+	app.Version = version
 	app.Usage = "A dump/restore tool for etcd3."
 	app.UsageText = app.Name + " <list|get|put|remove|dump|upload|tar|zip> [command options] [arguments...]\n\n" +
 		`ENVIRONMENT VARIABLES:
@@ -473,7 +511,7 @@ func main() {
 		},
 		{
 			Name:   "get",
-			Usage:  "get keys",
+			Usage:  "get entries",
 			Action: actGet,
 			Flags: []cli.Flag{
 				cli.BoolFlag{
@@ -485,7 +523,7 @@ func main() {
 		},
 		{
 			Name:   "put",
-			Usage:  "put key",
+			Usage:  "put entry",
 			Action: actPut,
 			Flags: []cli.Flag{
 				cli.BoolFlag{
@@ -496,23 +534,29 @@ func main() {
 			UsageText: app.Name + " put <file|-> key",
 		},
 		{
-			Name:      "remove",
-			Aliases:   []string{"rm"},
-			Usage:     "remove keys",
-			Action:    actRemove,
+			Name:    "remove",
+			Aliases: []string{"rm"},
+			Usage:   "remove entries",
+			Action:  actRemove,
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name:  "force, f",
+					Usage: "remove without prompting",
+				},
+			},
 			UsageText: app.Name + " rm key1 [key2/ ...]",
-			Description: `Remove command removes keys or directories from the EtcD.
-   If a key-parameter ends with '/' (e.g. key/), the key will be interpreted as a directory,
-   and everything inside this directory will be removed.`,
+			Description: `Remove command removes entries (or directories) from the EtcD.
+   If a key-parameter ends with '/' (e.g. key/), the key will be interpreted as a "directory",
+   and everything inside will be removed _recursively_.`,
 		},
 		{
 			Name:   "dump",
-			Usage:  "dump keys",
+			Usage:  "dump entries",
 			Action: actDump,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "directory, C",
-					Usage: "save keys into directory",
+					Usage: "dump entries into given directory",
 				},
 				cli.BoolFlag{
 					Name:  "d64",
@@ -520,7 +564,7 @@ func main() {
 				},
 				cli.BoolFlag{
 					Name:  "strip",
-					Usage: "strip path of the key",
+					Usage: "strip path(s) of the key",
 				},
 			},
 			UsageText: app.Name + " dump [-C <dir>] key1 [key2...]",
@@ -528,12 +572,12 @@ func main() {
 		{
 			Name:    "upload",
 			Aliases: []string{"up"},
-			Usage:   "upload keys",
+			Usage:   "upload entries",
 			Action:  actUpload,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "directory, C",
-					Usage: "load keys from directory",
+					Usage: "load entries from given directory",
 				},
 				cli.BoolFlag{
 					Name:  "e64",
@@ -548,7 +592,7 @@ func main() {
 		},
 		{
 			Name:   "tar",
-			Usage:  "create TAR archive from the EtcD keys",
+			Usage:  "create TAR archive from the EtcD entries",
 			Action: actTar,
 			Flags: []cli.Flag{
 				cli.StringFlag{
@@ -564,7 +608,7 @@ func main() {
 		},
 		{
 			Name:   "zip",
-			Usage:  "create ZIP archive from the EtcD keys",
+			Usage:  "create ZIP archive from the EtcD entries",
 			Action: actZip,
 			Flags: []cli.Flag{
 				cli.StringFlag{
