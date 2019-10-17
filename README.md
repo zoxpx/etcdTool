@@ -14,6 +14,37 @@ To build this tool, you should [download and install golang](https://golang.org/
 
 After the command completes, you will find the tool in `$GOPATH/bin/etcdTool`.
 
+<details>
+  <summary>Having $GOPATH compile-issues? (Click to expand)</summary>
+  
+  ### Build using temporary GOPATH
+  If you have `$GOPATH` -related issues/errors, try building the tool as follows:
+  
+  ```bash
+  # Check if go-command in path, otherwise set default path
+  command -v go > /dev/null || PATH=/usr/local/go/bin:$PATH
+  # Create temporary GOPATH-directory
+  export GOPATH=/tmp/go
+  mkdir -p $GOPATH
+  # Pull and compile the tool, copy it into /usr/local/bin/
+  go get -v -u -ldflags "-s -w" github.com/zoxpx/etcdTool
+  sudo cp $GOPATH/bin/etcdTool /usr/local/bin/
+  ```
+</details>
+
+<details>
+  <summary>Need static build? (Click to expand)</summary>
+  
+  ### Build using temporary GOPATH
+  If you need a static version of the tool, try building as follows:
+  
+  ```bash
+  env CGO_ENABLED=0 go get -v -u \
+    -a -ldflags "-extldflags -static -s -w" \
+    github.com/zoxpx/etcdTool
+  ```
+</details>
+
 ## General syntax
 
     NAME:
