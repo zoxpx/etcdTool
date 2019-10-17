@@ -10,6 +10,7 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
@@ -22,7 +23,8 @@ import (
 )
 
 const (
-	version = "1.3"
+	version              = "1.3.1"
+	unicodeFractSlashStr = "\u2044" // reserved unicode char
 )
 
 var (
@@ -34,7 +36,31 @@ var (
 		endpoints: "127.0.0.1:2379",
 		timeout:   5,
 	}
+	unicodeFractSlashBytes = []byte(unicodeFractSlashStr)
 )
+
+// kvKey2FileName is a WORKAROUND transformation function - will convert `xxx/` keys into `xxx\u2044` file-names
+func kvKey2FileName(kv *mvccpb.KeyValue) string {
+	if kv == nil || len(kv.Key) <= 0 {
+		logrus.Fatal("Invalid key name")
+	}
+	ky := kv.Key
+	if ll := len(ky); ky[ll-1] == '/' {
+		ky = append(ky[:ll-1], unicodeFractSlashBytes...)
+	}
+	return string(ky)
+}
+
+// fileName2KvKey is a WORKAROUND transformation function - will convert `xxx\u2044` file-names into `xxx/` keys
+func fileName2KvKey(in string) string {
+	if in == "" {
+		logrus.Fatal("Invalid file name")
+	}
+	if strings.HasSuffix(in, unicodeFractSlashStr) {
+		return in[:len(in)-len(unicodeFractSlashStr)] + "/"
+	}
+	return in
+}
 
 func getEtcdClient() *clientv3.Client {
 	client, err := clientv3.New(clientv3.Config{
@@ -144,7 +170,7 @@ func actTar(c *cli.Context) error {
 		checkErr(err)
 		for _, v := range res.Kvs {
 			header := new(tar.Header)
-			header.Name = string(v.Key)
+			header.Name = kvKey2FileName(v)
 			header.Size = int64(len(v.Value))
 			header.Mode = 0666
 			header.ModTime = time.Now()
@@ -198,7 +224,7 @@ func actZip(c *cli.Context) error {
 		checkErr(err)
 		var f io.Writer
 		for _, v := range res.Kvs {
-			f, err = zw.Create(string(v.Key))
+			f, err = zw.Create(kvKey2FileName(v))
 			checkErr(err)
 			_, err = f.Write(v.Value)
 			checkErr(err)
@@ -236,7 +262,7 @@ func actDump(c *cli.Context) error {
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
 		for _, v := range res.Kvs {
-			kk := string(v.Key)
+			kk := kvKey2FileName(v)
 			if optStrip {
 				kk = path.Base(kk)
 			}
@@ -285,7 +311,7 @@ func actUpload(c *cli.Context) error {
 				dbuf = ebuf
 			}
 			kk := optPrefix + fname[optDirLen:]
-			if _, err = client.Put(ctx, kk, string(dbuf)); err == nil {
+			if _, err = client.Put(ctx, fileName2KvKey(kk), string(dbuf)); err == nil {
 				logrus.Infof(logFmt, kk, len(dbuf))
 			}
 			return err
@@ -362,7 +388,8 @@ func actRemove(c *cli.Context) error {
 		logrus.Debugf("Doing DEL(%s,%#v)...", a, opts)
 		if ask {
 			if cnt := countKeys(a); cnt > 0 {
-				fmt.Fprintf(logrus.StandardLogger().Out, "WARNING: About to delete %d keys in %s!  Continue [Y/*]? ", cnt, a)
+				fmt.Fprintf(logrus.StandardLogger().Out,
+					"WARNING: About to delete %d keys in %s!  Continue [Y/*]? ", cnt, a)
 				fmt.Scanln(&txt)
 				if len(txt) < 1 || unicode.ToUpper(rune(txt[0])) != 'Y' {
 					logrus.Error("Aborted.")
@@ -406,7 +433,6 @@ func actGet(c *cli.Context) error {
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
 		for _, v := range res.Kvs {
-			kk := string(v.Key)
 			dbuf := v.Value
 			if optDecode {
 				dbuf = make([]byte, base64.StdEncoding.DecodedLen(len(v.Value)))
@@ -414,7 +440,7 @@ func actGet(c *cli.Context) error {
 					return err
 				}
 			}
-			logrus.Infof(logFmt, kk, len(dbuf))
+			logrus.Infof(logFmt, v.Key, len(dbuf))
 			os.Stdout.Write(dbuf)
 		}
 	}
@@ -458,7 +484,7 @@ func actPut(c *cli.Context) error {
 	}
 
 	logrus.Debugf("Doing PUT(%s,%#v)...", optFile, optKvPath)
-	_, err = client.Put(ctx, optKvPath, string(dbuf))
+	_, err = client.Put(ctx, fileName2KvKey(optKvPath), string(dbuf))
 	checkErr(err)
 	logrus.Infof("Put %s [%d%s]...", optKvPath, len(dbuf), dbgOpts)
 
