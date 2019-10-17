@@ -5,13 +5,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/codegangsta/cli"
-	"github.com/sirupsen/logrus"
-	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/mvcc/mvccpb"
-	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
 	"os"
@@ -20,10 +16,15 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli"
+	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
 const (
-	version              = "1.3.1"
+	version              = "1.4"
 	unicodeFractSlashStr = "\u2044" // reserved unicode char
 )
 
@@ -519,11 +520,17 @@ func main() {
 			Name:  "debug",
 			Usage: "Turn on debug output",
 		},
+		cli.BoolFlag{
+			Name:  "quiet",
+			Usage: "Suppress info messages",
+		},
 	}
 	app.Before = func(c *cli.Context) error {
 		if c.GlobalBool("debug") {
 			logrus.SetLevel(logrus.DebugLevel)
 			logrus.Debug("Logging level set to DEBUG")
+		} else if c.GlobalBool("quiet") {
+			logrus.SetLevel(logrus.WarnLevel)
 		}
 		return nil
 	}
