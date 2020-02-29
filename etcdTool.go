@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	version              = "1.4"
+	version              = "1.5"
 	unicodeFractSlashStr = "\u2044" // reserved unicode char
 )
 
@@ -108,9 +108,9 @@ func actList(c *cli.Context) error {
 	)
 
 	// Set up default params
-	args := c.Args()
+	args := c.Args().Slice()
 	if len(args) <= 0 {
-		args = cli.Args{""}
+		args = []string{""}
 	}
 	for _, a := range args {
 		res, err := client.Get(ctx, a, opts...)
@@ -156,9 +156,9 @@ func actTar(c *cli.Context) error {
 	defer tw.Close()
 
 	// Set up default params
-	args := c.Args()
+	args := c.Args().Slice()
 	if len(args) <= 0 {
-		args = cli.Args{""}
+		args = []string{""}
 	}
 
 	for _, a := range args {
@@ -204,9 +204,9 @@ func actZip(c *cli.Context) error {
 	}
 
 	// Set up default params
-	args := c.Args()
+	args := c.Args().Slice()
 	if len(args) <= 0 {
-		args = cli.Args{""}
+		args = []string{""}
 	}
 
 	zw := zip.NewWriter(out)
@@ -258,7 +258,7 @@ func actDump(c *cli.Context) error {
 		logFmt = "Wrote %s [%d, b64-decoded]..."
 	}
 
-	for _, a := range c.Args() {
+	for _, a := range c.Args().Slice() {
 		logrus.Debugf("Doing GET(%s,%#v)...", a, opts)
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
@@ -330,7 +330,7 @@ func actUpload(c *cli.Context) error {
 		inFnameFn = func(a string) string { return path.Join(optDir, a) }
 	}
 
-	for _, a := range c.Args() {
+	for _, a := range c.Args().Slice() {
 		a = inFnameFn(a)
 		logrus.Debugf("Doing PUT(%s,XX)...", a)
 		st, err := os.Stat(a)
@@ -376,7 +376,7 @@ func actRemove(c *cli.Context) error {
 		txt      string
 	)
 
-	for _, a := range c.Args() {
+	for _, a := range c.Args().Slice() {
 		opts := []clientv3.OpOption{}
 		ask := false
 		if strings.HasSuffix(a, "/") {
@@ -421,7 +421,7 @@ func actGet(c *cli.Context) error {
 		logFmt = "Got %s [%d, b64-decoded]..."
 	}
 
-	for _, a := range c.Args() {
+	for _, a := range c.Args().Slice() {
 		opts := []clientv3.OpOption{}
 		if strings.HasSuffix(a, "/") {
 			// dumping subtree
@@ -456,8 +456,8 @@ func actPut(c *cli.Context) error {
 	var (
 		client    = getEtcdClient()
 		optEncode = c.Bool("e64")
-		optFile   = c.Args()[0]
-		optKvPath = c.Args()[1]
+		optFile   = c.Args().Get(0)
+		optKvPath = c.Args().Get(1)
 		in        = io.ReadCloser(os.Stdin)
 	)
 
@@ -504,38 +504,38 @@ func main() {
 		`ENVIRONMENT VARIABLES:
    ETCD_LISTEN_CLIENT_URLS      Changes default endpoint`
 	app.Flags = []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:        "endpoints, e",
 			Value:       opt.endpoints,
 			Usage:       "Specify endpoints",
 			Destination: &opt.endpoints,
 		},
-		cli.IntFlag{
+		&cli.IntFlag{
 			Name:        "timeout, T",
 			Value:       opt.timeout,
 			Usage:       "Specify timeout",
 			Destination: &opt.timeout,
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "debug",
 			Usage: "Turn on debug output",
 		},
-		cli.BoolFlag{
+		&cli.BoolFlag{
 			Name:  "quiet",
 			Usage: "Suppress info messages",
 		},
 	}
 	app.Before = func(c *cli.Context) error {
-		if c.GlobalBool("debug") {
+		if c.Bool("debug") {
 			logrus.SetLevel(logrus.DebugLevel)
 			logrus.Debug("Logging level set to DEBUG")
-		} else if c.GlobalBool("quiet") {
+		} else if c.Bool("quiet") {
 			logrus.SetLevel(logrus.WarnLevel)
 		}
 		return nil
 	}
 
-	app.Commands = []cli.Command{
+	app.Commands = []*cli.Command{
 		{
 			Name:    "list",
 			Aliases: []string{"ls"},
@@ -547,7 +547,7 @@ func main() {
 			Usage:  "get entries",
 			Action: actGet,
 			Flags: []cli.Flag{
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "d64",
 					Usage: "perform base64 decoding",
 				},
@@ -559,7 +559,7 @@ func main() {
 			Usage:  "put entry",
 			Action: actPut,
 			Flags: []cli.Flag{
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "e64",
 					Usage: "perform base64 encoding",
 				},
@@ -572,7 +572,7 @@ func main() {
 			Usage:   "remove entries",
 			Action:  actRemove,
 			Flags: []cli.Flag{
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "force, f",
 					Usage: "remove without prompting",
 				},
@@ -587,15 +587,15 @@ func main() {
 			Usage:  "dump entries",
 			Action: actDump,
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:  "directory, C",
 					Usage: "dump entries into given directory",
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "d64",
 					Usage: "perform base64 decoding",
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "strip",
 					Usage: "strip path(s) of the key",
 				},
@@ -608,15 +608,15 @@ func main() {
 			Usage:   "upload entries",
 			Action:  actUpload,
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:  "directory, C",
 					Usage: "load entries from given directory",
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "e64",
 					Usage: "perform base64 encoding",
 				},
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:  "prefix",
 					Usage: "prefix the keys on upload",
 				},
@@ -628,11 +628,11 @@ func main() {
 			Usage:  "create TAR archive from the EtcD entries",
 			Action: actTar,
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:  "f",
 					Usage: "specify TAR filename",
 				},
-				cli.BoolFlag{
+				&cli.BoolFlag{
 					Name:  "z",
 					Usage: "compress archive (GZip)",
 				},
@@ -644,7 +644,7 @@ func main() {
 			Usage:  "create ZIP archive from the EtcD entries",
 			Action: actZip,
 			Flags: []cli.Flag{
-				cli.StringFlag{
+				&cli.StringFlag{
 					Name:  "f",
 					Usage: "specify ZIP filename",
 				},
