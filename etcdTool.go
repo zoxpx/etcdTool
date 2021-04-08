@@ -17,14 +17,14 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/mvcc/mvccpb"
 )
 
 const (
-	version              = "1.5"
+	version              = "1.6"
 	unicodeFractSlashStr = "\u2044" // reserved unicode char
 )
 
@@ -105,14 +105,25 @@ func actList(c *cli.Context) error {
 			clientv3.WithKeysOnly(),
 			clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
 		}
+		printer = func(kv *mvccpb.KeyValue) {
+			fmt.Printf("%s\n", kv.Key)
+		}
+		header string
 	)
 
+	if c.Bool("long") {
+		header = " VER  CREATE-REV  MODIF-REV  KEY-NAME...\n-----+----------+----------+-------------"
+		printer = func(kv *mvccpb.KeyValue) {
+			fmt.Printf("%5d %10d %10d %s\n", kv.Version, kv.CreateRevision, kv.ModRevision, kv.Key)
+		}
+	}
+
 	// Set up default params
-	args := c.Args().Slice()
+	args := c.Args()
 	if len(args) <= 0 {
 		args = []string{""}
 	}
-	for _, a := range args {
+	for i, a := range args {
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
 		if len(args) > 1 || res.Count > 1 {
@@ -122,8 +133,11 @@ func actList(c *cli.Context) error {
 				logrus.Infof("Found %d keys:", res.Count)
 			}
 		}
+		if i == 0 && header != "" {
+			fmt.Println(header)
+		}
 		for _, v := range res.Kvs {
-			fmt.Printf("%s\n", v.Key)
+			printer(v)
 		}
 	}
 	return nil
@@ -156,7 +170,7 @@ func actTar(c *cli.Context) error {
 	defer tw.Close()
 
 	// Set up default params
-	args := c.Args().Slice()
+	args := c.Args()
 	if len(args) <= 0 {
 		args = []string{""}
 	}
@@ -198,13 +212,13 @@ func actZip(c *cli.Context) error {
 	)
 
 	if optFile == "" {
-		return fmt.Errorf("Must specify output file (-f file)")
+		return fmt.Errorf("must specify output file (-f file)")
 	} else if out, err = os.Create(optFile); err != nil {
 		return err
 	}
 
 	// Set up default params
-	args := c.Args().Slice()
+	args := c.Args()
 	if len(args) <= 0 {
 		args = []string{""}
 	}
@@ -239,7 +253,7 @@ func actZip(c *cli.Context) error {
 
 func actDump(c *cli.Context) error {
 	if c.NArg() <= 0 {
-		return fmt.Errorf("Must specify which keys to dump")
+		return fmt.Errorf("must specify which keys to dump")
 	}
 
 	var (
@@ -251,14 +265,14 @@ func actDump(c *cli.Context) error {
 			clientv3.WithPrefix(),
 			clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
 		}
-		logFmt = "Wrote %s [%d]..."
+		logFmt = "Wrote %s [%d bytes]..."
 	)
 
 	if optDecode {
-		logFmt = "Wrote %s [%d, b64-decoded]..."
+		logFmt = "Wrote %s [%d bytes, b64-decoded]..."
 	}
 
-	for _, a := range c.Args().Slice() {
+	for _, a := range c.Args() {
 		logrus.Debugf("Doing GET(%s,%#v)...", a, opts)
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
@@ -290,7 +304,7 @@ func actDump(c *cli.Context) error {
 
 func actUpload(c *cli.Context) error {
 	if c.NArg() <= 0 {
-		return fmt.Errorf("Must specify which directory to upload")
+		return fmt.Errorf("must specify which directory to upload")
 	}
 
 	var (
@@ -330,7 +344,7 @@ func actUpload(c *cli.Context) error {
 		inFnameFn = func(a string) string { return path.Join(optDir, a) }
 	}
 
-	for _, a := range c.Args().Slice() {
+	for _, a := range c.Args() {
 		a = inFnameFn(a)
 		logrus.Debugf("Doing PUT(%s,XX)...", a)
 		st, err := os.Stat(a)
@@ -367,24 +381,23 @@ func actUpload(c *cli.Context) error {
 
 func actRemove(c *cli.Context) error {
 	if c.NArg() <= 0 {
-		return fmt.Errorf("Must specify which keys to remove")
+		return fmt.Errorf("must specify which keys to remove")
 	}
 
 	var (
-		client   = getEtcdClient()
-		optForce = c.Bool("f")
-		txt      string
+		client = getEtcdClient()
+		txt    string
 	)
 
-	for _, a := range c.Args().Slice() {
-		opts := []clientv3.OpOption{}
+	for _, a := range c.Args() {
+		var opts []clientv3.OpOption
 		ask := false
-		if strings.HasSuffix(a, "/") {
+		if c.Bool("recursive") {
 			// dumping subtree
 			opts = []clientv3.OpOption{
 				clientv3.WithPrefix(),
 			}
-			ask = !optForce
+			ask = !c.Bool("force")
 		}
 		logrus.Debugf("Doing DEL(%s,%#v)...", a, opts)
 		if ask {
@@ -408,22 +421,22 @@ func actRemove(c *cli.Context) error {
 
 func actGet(c *cli.Context) error {
 	if c.NArg() <= 0 {
-		return fmt.Errorf("Must specify which keys to get")
+		return fmt.Errorf("must specify which keys to get")
 	}
 
 	var (
 		client    = getEtcdClient()
 		optDecode = c.Bool("d64")
-		logFmt    = "Got %s [%d]..."
+		logFmt    = "Got %s [%d bytes]..."
 	)
 
 	if optDecode {
-		logFmt = "Got %s [%d, b64-decoded]..."
+		logFmt = "Got %s [%d bytes, base64-decoded]..."
 	}
 
-	for _, a := range c.Args().Slice() {
-		opts := []clientv3.OpOption{}
-		if strings.HasSuffix(a, "/") {
+	for _, a := range c.Args() {
+		var opts []clientv3.OpOption
+		if c.Bool("recursive") {
 			// dumping subtree
 			opts = []clientv3.OpOption{
 				clientv3.WithPrefix(),
@@ -433,13 +446,16 @@ func actGet(c *cli.Context) error {
 		logrus.Debugf("Doing GET(%s,%#v)...", a, opts)
 		res, err := client.Get(ctx, a, opts...)
 		checkErr(err)
-		for _, v := range res.Kvs {
+		for i, v := range res.Kvs {
 			dbuf := v.Value
 			if optDecode {
 				dbuf = make([]byte, base64.StdEncoding.DecodedLen(len(v.Value)))
 				if _, err := base64.StdEncoding.Decode(dbuf, v.Value); err != nil {
 					return err
 				}
+			}
+			if i > 0 {
+				os.Stdout.Write([]byte("\n"))
 			}
 			logrus.Infof(logFmt, v.Key, len(dbuf))
 			os.Stdout.Write(dbuf)
@@ -450,7 +466,7 @@ func actGet(c *cli.Context) error {
 
 func actPut(c *cli.Context) error {
 	if c.NArg() < 2 {
-		return fmt.Errorf("Must specify <file|-> <key>")
+		return fmt.Errorf("must specify <file|-> <key>")
 	}
 
 	var (
@@ -478,7 +494,7 @@ func actPut(c *cli.Context) error {
 
 	dbgOpts := ""
 	if optEncode {
-		dbgOpts = ", b64 encoded"
+		dbgOpts = ", base64 encoded"
 		ebuf := make([]byte, base64.StdEncoding.EncodedLen(len(dbuf)))
 		base64.StdEncoding.Encode(ebuf, dbuf)
 		dbuf = ebuf
@@ -503,17 +519,18 @@ func main() {
 	app.UsageText = app.Name + " <list|get|put|remove|dump|upload|tar|zip> [command options] [arguments...]\n\n" +
 		`ENVIRONMENT VARIABLES:
    ETCD_LISTEN_CLIENT_URLS      Changes default endpoint`
+	app.UseShortOptionHandling = true
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:        "endpoints, e",
 			Value:       opt.endpoints,
-			Usage:       "Specify endpoints",
+			Usage:       "set etcd endpoints",
 			Destination: &opt.endpoints,
 		},
 		&cli.IntFlag{
 			Name:        "timeout, T",
 			Value:       opt.timeout,
-			Usage:       "Specify timeout",
+			Usage:       "set timeout",
 			Destination: &opt.timeout,
 		},
 		&cli.BoolFlag{
@@ -535,21 +552,31 @@ func main() {
 		return nil
 	}
 
-	app.Commands = []*cli.Command{
+	app.Commands = []cli.Command{
 		{
 			Name:    "list",
 			Aliases: []string{"ls"},
 			Usage:   "list keys",
 			Action:  actList,
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:  "long, l",
+					Usage: "use long output",
+				},
+			},
 		},
 		{
 			Name:   "get",
-			Usage:  "get entries",
+			Usage:  "get keys",
 			Action: actGet,
 			Flags: []cli.Flag{
 				&cli.BoolFlag{
 					Name:  "d64",
 					Usage: "perform base64 decoding",
+				},
+				&cli.BoolFlag{
+					Name:  "recursive, r",
+					Usage: "get keys recursively",
 				},
 			},
 			UsageText: app.Name + " get key1 [key2...]",
@@ -569,27 +596,29 @@ func main() {
 		{
 			Name:    "remove",
 			Aliases: []string{"rm"},
-			Usage:   "remove entries",
+			Usage:   "remove keys",
 			Action:  actRemove,
 			Flags: []cli.Flag{
 				&cli.BoolFlag{
 					Name:  "force, f",
 					Usage: "remove without prompting",
 				},
+				&cli.BoolFlag{
+					Name:  "recursive, r",
+					Usage: "delete recursively",
+				},
 			},
-			UsageText: app.Name + " rm key1 [key2/ ...]",
-			Description: `Remove command removes entries (or directories) from the EtcD.
-   If a key-parameter ends with '/' (e.g. key/), the key will be interpreted as a "directory",
-   and everything inside will be removed _recursively_.`,
+			UsageText:   app.Name + " rm key1 [key2/ ...]",
+			Description: `Remove command removes keys (or directories of keys) from the EtcD.`,
 		},
 		{
 			Name:   "dump",
-			Usage:  "dump entries",
+			Usage:  "dump keys",
 			Action: actDump,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
 					Name:  "directory, C",
-					Usage: "dump entries into given directory",
+					Usage: "dump keys into given directory",
 				},
 				&cli.BoolFlag{
 					Name:  "d64",
@@ -605,12 +634,12 @@ func main() {
 		{
 			Name:    "upload",
 			Aliases: []string{"up"},
-			Usage:   "upload entries",
+			Usage:   "upload keys",
 			Action:  actUpload,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
 					Name:  "directory, C",
-					Usage: "load entries from given directory",
+					Usage: "load keys from the given directory",
 				},
 				&cli.BoolFlag{
 					Name:  "e64",
@@ -625,7 +654,7 @@ func main() {
 		},
 		{
 			Name:   "tar",
-			Usage:  "create TAR archive from the EtcD entries",
+			Usage:  "create TAR archive from EtcD keys",
 			Action: actTar,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
@@ -641,7 +670,7 @@ func main() {
 		},
 		{
 			Name:   "zip",
-			Usage:  "create ZIP archive from the EtcD entries",
+			Usage:  "create ZIP archive from EtcD keys",
 			Action: actZip,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
